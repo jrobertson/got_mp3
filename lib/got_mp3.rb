@@ -1,4 +1,5 @@
 #!/usr/bin/env ruby
+
 # file: got_mp3.rb
 
 require "mp3info"
@@ -11,21 +12,36 @@ class GotMP3
   end
 
 
+  # Adds album art to each MP3 file
+  #
   # Example usage:
   #   gotmp3 = GotMP3.new(dir: '/tmp/tree/Da Fustra - Over The Waves To Shetland')
   #   gotmp3.add_jpg
-  # 
+  #
   def add_jpg()
 
-    a = Dir[File.join(@dir, "**", "*.jpg")]
-    puts 'a: ' + a.inspect if @debug
-    directories = a.inject({}) {|r, x| r[File.dirname(x)] = File.basename(x); r }
-
-    directories.each do |directory, img_filename|
+    find_by_ext('.jpg').each do |directory, img_filename|
       add_image directory, img_filename
     end
 
   end
+
+  # Adds a track title to each MP3 file
+  #
+  # Example usage:
+  #   gotmp3 = GotMP3.new(dir: '/tmp/tree/Da Fustra - Over The Waves To Shetland')
+  #   gotmp3.add_titles
+  #
+  def add_titles()
+
+    find_by_ext('.txt').each do |directory, txt_filename|
+      add_tracktitles directory, txt_filename
+    end
+
+  end
+
+  #def go()
+  #end
 
   private
 
@@ -33,10 +49,10 @@ class GotMP3
   #
   def add_image(directory, img_filename)
 
-    image_file = File.new(File.join(directory, img_filename),'rb') 
+    image_file = File.new(File.join(directory, img_filename),'rb')
     img = image_file.read
 
-    each_mp3(directory) do |mp3|
+    each_mp3(directory) do |mp3, _, _|
 
       mp3.tag2.remove_pictures
       mp3.tag2.add_picture img
@@ -45,16 +61,63 @@ class GotMP3
 
   end
 
+  def add_tracktitles(directory, txt_filename)
+
+    txt_file = File.join(directory, txt_filename)
+    track_titles = File.read(txt_file).lines[1..-1].map(&:strip)
+
+    each_mp3(directory) do |mp3, trackno, _|
+
+      mp3.tag.title = track_titles[trackno-1]
+
+    end
+  end
+
+  def add_image_and_titles(directory, img_filename, txt_filename)
+
+    image_file = File.new(File.join(directory, img_filename),'rb')
+    img = image_file.read
+
+    txt_file = File.join(directory, txt_filename)
+    track_titles = File.read(txt_file).lines[1..-1].map(&:strip)
+
+    found = Dir[File.join(directory, "*.mp3")].sort_by { |x| File.mtime(x) }
+    found.each.with_index do |mp3_filepath, i|
+
+      Mp3Info.open(mp3_filepath) do |mp3|
+        mp3.tag2.remove_pictures
+        mp3.tag2.add_picture img
+        mp3.tag.title = track_titles[trackno-1]
+      end
+
+      File.rename(mp3_filepath, File.join(directory,
+                    track_titles[i][/^[^\/]+/].gsub(/\W/,'').rstrip + '.mp3'))
+    end
+
+  end
+
   def each_mp3(directory, &blk)
 
-    Dir[File.join(directory, "*.mp3")].each do |mp3_filepath|
+    found = Dir[File.join(directory, "*.mp3")].sort_by { |x| File.mtime(x) }
+    found.each.with_index do |mp3_filepath, i|
 
-      Mp3Info.open mp3_filepath do |mp3|
-        blk.call mp3
-      end
+      Mp3Info.open(mp3_filepath) {|mp3|  blk.call(mp3, i+1, mp3_filepath) }
 
     end
 
+  end
+
+  def find_by_ext(extension)
+
+    a = Dir[File.join(@dir, "**", "*" + extension)]
+    puts 'a: ' + a.inspect if @debug
+
+    a.inject({}) do |r, x|
+
+      r[File.dirname(x)] = File.basename(x)
+      r
+
+    end
   end
 
 end

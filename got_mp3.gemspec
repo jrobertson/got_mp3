@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name = 'got_mp3'
-  s.version = '0.1.0'
+  s.version = '0.1.1'
   s.summary = 'A ruby-mp3info wrapper to make it convenient to update the metadata of multiple MP3 files at once.'
   s.authors = ['James Robertson']
   s.files = Dir['lib/got_mp3.rb']
