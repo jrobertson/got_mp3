@@ -1,7 +1,7 @@
 Gem::Specification.new do |s|
   s.name = 'got_mp3'
-  s.version = '0.1.1'
-  s.summary = 'A ruby-mp3info wrapper to make it convenient to update the metadata of multiple MP3 files at once.'
+  s.version = '0.1.3'
+  s.summary = 'A ruby-mp3info wrapper to make it convenient to update the album art and track titles of multiple MP3 files as a batch process.'
   s.authors = ['James Robertson']
   s.files = Dir['lib/got_mp3.rb']
   s.add_runtime_dependency('ruby-mp3info', '~> 0.8', '>=0.8.10')

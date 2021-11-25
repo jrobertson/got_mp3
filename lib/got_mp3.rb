@@ -40,8 +40,24 @@ class GotMP3
 
   end
 
-  #def go()
-  #end
+  # Adds the album art, track title, and renames the MP3 file
+  #
+  def go()
+
+    find_by_ext('.mp3').each do |directory, _ |
+
+      # find the image file
+      img_filename = Dir[File.join(directory, '*.jpg')].first
+
+      # find the text file
+      txt_filename = Dir[File.join(directory, '*.txt')].first
+      next unless txt_filename
+
+      add_image_and_titles(directory, img_filename, txt_filename)
+
+    end
+
+  end
 
   private
 
@@ -73,25 +89,29 @@ class GotMP3
     end
   end
 
-  def add_image_and_titles(directory, img_filename, txt_filename)
+  def add_image_and_titles(directory, img_file, txt_file)
 
-    image_file = File.new(File.join(directory, img_filename),'rb')
-    img = image_file.read
+    if img_file then
+      img = File.new(img_file,'rb').read
+    end
 
-    txt_file = File.join(directory, txt_filename)
     track_titles = File.read(txt_file).lines[1..-1].map(&:strip)
 
     found = Dir[File.join(directory, "*.mp3")].sort_by { |x| File.mtime(x) }
     found.each.with_index do |mp3_filepath, i|
 
       Mp3Info.open(mp3_filepath) do |mp3|
-        mp3.tag2.remove_pictures
-        mp3.tag2.add_picture img
-        mp3.tag.title = track_titles[trackno-1]
+
+        if img_file then
+          mp3.tag2.remove_pictures
+          mp3.tag2.add_picture img
+        end
+
+        mp3.tag.title = track_titles[i]
       end
 
       File.rename(mp3_filepath, File.join(directory,
-                    track_titles[i][/^[^\/]+/].gsub(/\W/,'').rstrip + '.mp3'))
+                    track_titles[i][/^[^\/]+/].gsub(/:/,'_').rstrip + '.mp3'))
     end
 
   end
