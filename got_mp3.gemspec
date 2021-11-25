@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name = 'got_mp3'
-  s.version = '0.1.3'
+  s.version = '0.2.0'
   s.summary = 'A ruby-mp3info wrapper to make it convenient to update the album art and track titles of multiple MP3 files as a batch process.'
   s.authors = ['James Robertson']
   s.files = Dir['lib/got_mp3.rb']

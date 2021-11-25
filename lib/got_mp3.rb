@@ -2,6 +2,7 @@
 
 # file: got_mp3.rb
 
+require 'ostruct'
 require "mp3info"
 
 
@@ -40,7 +41,18 @@ class GotMP3
 
   end
 
-  # Adds the album art, track title, and renames the MP3 file
+  def each_mp3_file(directory='.', &blk)
+
+    found = Dir[File.join(directory, "*.mp3")].sort_by { |x| File.mtime(x) }
+    found.each.with_index do |mp3_filepath, i|
+
+      blk.call(mp3_filepath, i )
+
+    end
+
+  end
+
+  # Adds the album art, track title, renames the MP3 file, and adds a playlist
   #
   def go()
 
@@ -59,16 +71,79 @@ class GotMP3
 
   end
 
+  # rename 1 or more mp3 files within 1 or more file directories
+  #
+  # example usage:
+  #   rename() {|mp3file| mp3files.sub(/Disc \d - /,'')}
+  #   rename() {|mp3file| mp3file.sub(/Disc \d - (\d+) - /,'\1. ')}
+  #
+  def rename()
+
+    each_mp3_file do |mp3_filepath|
+
+      mp3_directory = File.dirname(mp3_filepath)
+      mp3_filename = File.basename(mp3_filepath)
+
+      newname = yield(mp3_filename)
+      File.rename(mp3_filepath, File.join(mp3_directory, newname))
+
+    end
+
+  end
+
+  def write_titles()
+
+    find_by_ext('.mp3').each do |directory, _ |
+
+      tracks = []
+
+      each_mp3_track(directory) do |mp3, trackno, mp3_filepath|
+
+        tracks << OpenStruct.new({
+          title: mp3.tag.title,
+          artist: mp3.tag.artist,
+          album: mp3.tag.album,
+          album_artist: mp3.tag2['TPE2'],
+          disc: mp3.tag2['TPOS'],
+          tracknum: mp3.tag.tracknum,
+          filename: File.basename(mp3_filepath)
+        })
+
+      end
+
+      heading = tracks[0].album_artist + ' - ' + tracks[0].album
+      s = "# %s\n\n" % [heading]
+      h = tracks.group_by(&:disc)
+
+      body = if h.length == 1 then
+
+        list(tracks)
+
+      else
+
+        "\n" + h.map do |disc, tracks2|
+          ("## Disc %d\n\n" % disc) + list(tracks2) + "\n\n"
+        end.join("\n")
+
+      end
+
+      File.write File.join(directory, heading + '.txt'), s + body
+
+    end
+
+  end
+
   private
 
   # adds album art to each mp3 file in a file directory
   #
   def add_image(directory, img_filename)
 
+    puts 'img_filename: ' + img_filename.inspect if @debug
     image_file = File.new(File.join(directory, img_filename),'rb')
     img = image_file.read
 
-    each_mp3(directory) do |mp3, _, _|
+    each_mp3_track(directory) do |mp3, _, _|
 
       mp3.tag2.remove_pictures
       mp3.tag2.add_picture img
@@ -82,7 +157,7 @@ class GotMP3
     txt_file = File.join(directory, txt_filename)
     track_titles = File.read(txt_file).lines[1..-1].map(&:strip)
 
-    each_mp3(directory) do |mp3, trackno, _|
+    each_mp3_track(directory) do |mp3, trackno, _|
 
       mp3.tag.title = track_titles[trackno-1]
 
@@ -97,6 +172,10 @@ class GotMP3
 
     track_titles = File.read(txt_file).lines[1..-1].map(&:strip)
 
+    titles_mp3 = track_titles.map do |title|
+      title[/^[^\/]+/].gsub(/:/,'_').rstrip + '.mp3'
+    end
+
     found = Dir[File.join(directory, "*.mp3")].sort_by { |x| File.mtime(x) }
     found.each.with_index do |mp3_filepath, i|
 
@@ -110,16 +189,17 @@ class GotMP3
         mp3.tag.title = track_titles[i]
       end
 
-      File.rename(mp3_filepath, File.join(directory,
-                    track_titles[i][/^[^\/]+/].gsub(/:/,'_').rstrip + '.mp3'))
+      File.rename(mp3_filepath, File.join(directory, titles_mp3[i]))
+
     end
+
+    File.write File.join(directory, 'playlist.m3u'), titles_mp3.join("\n")
 
   end
 
-  def each_mp3(directory, &blk)
+  def each_mp3_track(directory, &blk)
 
-    found = Dir[File.join(directory, "*.mp3")].sort_by { |x| File.mtime(x) }
-    found.each.with_index do |mp3_filepath, i|
+    each_mp3_file do |mp3_filepath, i|
 
       Mp3Info.open(mp3_filepath) {|mp3|  blk.call(mp3, i+1, mp3_filepath) }
 
@@ -138,6 +218,58 @@ class GotMP3
       r
 
     end
+  end
+
+  def list(tracks)
+
+    a = if tracks.map(&:artist).uniq.length < 2 then
+      tracks.map {|x| "%02d. %s" % [x.tracknum, x.title] }
+    else
+      tracks.map {|x| "%02d. %s - %s" % [x.tracknum, x.title, x.artist] }
+    end
+
+    a.join("\n")
+
+  end
+
+end
+
+class Titles
+
+  def initialize(filename, target_directory: 'titles')
+    @titles = File.read filename
+    @target_directory = target_directory
+  end
+
+  def titleize()
+    @titles.gsub(/[\w']+/) {|x| x[0].upcase + x[1..-1]}
+  end
+
+  def titleize!()
+    @titles.gsub!(/[\w']+/) {|x| x[0].upcase + x[1..-1]}
+  end
+
+  def split(target_directory: @target_directory)
+
+    FileUtils.mkdir_p @target_directory
+    a = @titles.strip.split(/(?=^#)/)
+
+    a.each do |x|
+
+      filename = x.lines.first.chomp[/(?<=# cd ).*/i].strip + '.txt'
+      puts 'processing file ' + filename.inspect
+      heading = x.lstrip.lines.first
+
+      tracks = x.strip.lines[1..-1].map.with_index do |line, i|
+        "%02d. %s" % [i+1, line]
+      end
+
+      File.write File.join(target_directory, filename), heading + tracks.join
+
+    end
+
+    puts 'split done'
+
   end
 
 end
