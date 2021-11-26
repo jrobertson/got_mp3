@@ -22,6 +22,8 @@ class GotMP3
   def add_jpg()
 
     find_by_ext('.jpg').each do |directory, img_filename|
+
+      puts 'add_jpg to directory: ' + directory.inspect if @debug
       add_image directory, img_filename
     end
 
@@ -41,10 +43,65 @@ class GotMP3
 
   end
 
+  # copy all MP3 directories through the category file-directory stucture
+  #
+  def compile(source_directory: '', target_directory: '')
+
+    raise 'target_directory cannot be empty' if target_directory.empty?
+
+    find_by_ext('.txt').each do |directory, _ |
+
+      Dir[File.join(directory, '*.txt')].each do |txt_filename|
+
+        album = File.join(source_directory,
+                          File.basename(txt_filename).sub(/\.txt$/,''))
+        library_dir = File.join(target_directory, File.basename(directory))
+        FileUtils.mkdir_p library_dir
+
+        if @debug then
+          puts 'copying from:' + album.inspect
+          puts 'copying to: ' + library_dir.inspect
+        end
+
+        puts 'copying ' + album + ' ...'
+        FileUtils.cp_r album, library_dir, remove_destination: true
+
+      end
+    end
+
+  end
+
+  def consolidate_txt(target_directory: '')
+
+    raise 'target_directory cannot be empty' if target_directory.empty?
+
+    find_by_ext('.mp3').each do |directory, _ |
+
+      puts 'write_titles() - directory: ' + directory.inspect if @debug
+      txt_filename = Dir[File.join(directory, '*.txt')].first
+
+      next unless txt_filename
+
+      target_file = File.basename(directory)
+
+      FileUtils.cp txt_filename, File.join(target_directory,
+                                           target_file + '.txt')
+
+    end
+
+  end
+
   def each_mp3_file(directory='.', &blk)
 
+    puts 'each_mp3 - directory: ' + directory.inspect if @debug
     found = Dir[File.join(directory, "*.mp3")].sort_by { |x| File.mtime(x) }
-    found.each.with_index do |mp3_filepath, i|
+    puts 'each_mp3 - found: ' + found.inspect if @debug
+
+    found.reverse.each.with_index do |mp3_filepath, i|
+
+      puts 'each_mp3 - mp3_filepath: ' + mp3_filepath.inspect if @debug
+
+      next unless File.exists? mp3_filepath
 
       blk.call(mp3_filepath, i )
 
@@ -60,6 +117,7 @@ class GotMP3
 
       # find the image file
       img_filename = Dir[File.join(directory, '*.jpg')].first
+      puts 'img_filename: ' + img_filename.inspect if @debug
 
       # find the text file
       txt_filename = Dir[File.join(directory, '*.txt')].first
@@ -93,7 +151,14 @@ class GotMP3
 
   def write_titles()
 
+    puts 'inside write_titles()' if @debug
+
     find_by_ext('.mp3').each do |directory, _ |
+
+      puts 'write_titles() - directory: ' + directory.inspect if @debug
+      txt_filename = Dir[File.join(directory, '*.txt')].first
+
+      next if txt_filename
 
       tracks = []
 
@@ -139,6 +204,7 @@ class GotMP3
   #
   def add_image(directory, img_filename)
 
+    puts 'inside add_image - directory: ' + directory.inspect if @debug
     puts 'img_filename: ' + img_filename.inspect if @debug
     image_file = File.new(File.join(directory, img_filename),'rb')
     img = image_file.read
@@ -199,7 +265,7 @@ class GotMP3
 
   def each_mp3_track(directory, &blk)
 
-    each_mp3_file do |mp3_filepath, i|
+    each_mp3_file(directory) do |mp3_filepath, i|
 
       Mp3Info.open(mp3_filepath) {|mp3|  blk.call(mp3, i+1, mp3_filepath) }
 
@@ -209,6 +275,7 @@ class GotMP3
 
   def find_by_ext(extension)
 
+    puts 'find_by_ext() - @dir' + @dir.inspect if @debug
     a = Dir[File.join(@dir, "**", "*" + extension)]
     puts 'a: ' + a.inspect if @debug
 
