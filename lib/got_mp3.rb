@@ -2,6 +2,7 @@
 
 # file: got_mp3.rb
 
+require 'dxlite'
 require 'ostruct'
 require "mp3info"
 
@@ -77,13 +78,11 @@ class GotMP3
 
     find_by_ext('.mp3').each do |directory, _ |
 
-      puts 'write_titles() - directory: ' + directory.inspect if @debug
       txt_filename = Dir[File.join(directory, '*.txt')].first
 
       next unless txt_filename
 
       target_file = File.basename(directory)
-
       FileUtils.cp txt_filename, File.join(target_directory,
                                            target_file + '.txt')
 
@@ -149,7 +148,7 @@ class GotMP3
 
   end
 
-  def write_titles()
+  def write_titles(format: 'txt')
 
     puts 'inside write_titles()' if @debug
 
@@ -158,41 +157,64 @@ class GotMP3
       puts 'write_titles() - directory: ' + directory.inspect if @debug
       txt_filename = Dir[File.join(directory, '*.txt')].first
 
-      next if txt_filename
+      next if txt_filename and format.to_sym == :txt
 
       tracks = []
 
       each_mp3_track(directory) do |mp3, trackno, mp3_filepath|
 
         tracks << OpenStruct.new({
-          title: mp3.tag.title,
+          title: mp3.tag.title.sub(/^\d+\. */,''),
           artist: mp3.tag.artist,
           album: mp3.tag.album,
-          album_artist: mp3.tag2['TPE2'],
-          disc: mp3.tag2['TPOS'],
+          album_artist: mp3.tag2['TPE2'] || mp3.tag.artist,
+          disc: mp3.tag2['TPOS'] || 1,
           tracknum: mp3.tag.tracknum,
           filename: File.basename(mp3_filepath)
         })
 
       end
 
+      puts 'tracks: ' + tracks.inspect if @debug
+
       heading = tracks[0].album_artist + ' - ' + tracks[0].album
+
       s = "# %s\n\n" % [heading]
       h = tracks.group_by(&:disc)
 
-      body = if h.length == 1 then
 
-        list(tracks)
+      if format.to_sym == :txt then
+
+        body = if h.length == 1 then
+
+          list(tracks)
+
+        else
+
+          "\n" + h.map do |disc, tracks2|
+            ("## Disc %d\n\n" % disc) + list(tracks2) + "\n\n"
+          end.join("\n")
+
+        end
+
+        File.write File.join(directory, heading + '.txt'), s + body
 
       else
 
-        "\n" + h.map do |disc, tracks2|
-          ("## Disc %d\n\n" % disc) + list(tracks2) + "\n\n"
-        end.join("\n")
+        # :xml
+        puts 'xml' if @debug
+
+        dx = DxLite.new('album[album_artist, album]/track(tracknum, title, ' +
+                                                 'artist, disc, album_artist)')
+
+        h.each {|_,x| puts x.inspect } if @debug
+        h.each {|_,x| x.each {|track| dx.create(track.to_h) } }
+
+        dx.album_artist = dx.all[0].album_artist
+        dx.album = dx.all[0].album
+        dx.save File.join(directory, 'playlist.dx')
 
       end
-
-      File.write File.join(directory, heading + '.txt'), s + body
 
     end
 
